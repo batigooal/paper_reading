@@ -37,9 +37,21 @@ $f_{obj}$是预测与groundtruth之间的IOU；$f_{cl}$是给定类别存在目�
 ### 3.1 目标缩放蒸馏
 yolo这样的单阶段检测器在最后一层会预测出非常密集的candidates，在推理时会通过类别置信度来淘汰背景过多的boundingbox。蒸馏的传统过程中是不存在淘汰boundingbox的步骤的。教师网络给太多错误的boundingbox是会影响学生网络的boundingbox训练的。为了避免学习教师网络那些背景过多的区域，本文将distillation loss制定为对象缩放函数，意思是只有在教师预测的类别置信度很高时才学习boundingbox坐标和类别置信度。
 
-目标类别部分的损失函数公式更改为：
-$$f^{Comb}_{obj}(o^{gt}_i,\hat{o_i},o^T_i)=f_{obj}(o^{gt}_i,\hat{o_i})+\lambda_D\cdot{f_{obj}(o^T_i,\hat{o_i})}$$
+蒸馏时采用的损失函数分别修改为：
+$$f^{Comb}_{obj}(o^{gt}_i,\hat{o_i},o^T_i)=\underbrace{f_{obj}(o^{gt}_i,\hat{o_i})}_{\text{Detection loss}}+\underbrace{\lambda_D\cdot{f_{obj}(o^T_i,\hat{o_i})}}_{\text{Distillation loss}}$$
 
-目标类别置信度的损失函数公式更改为：
-$$$$
+$$f^{Comb}_{cl}(p^{gt}_i,\hat{p_i},p^T_i,\hat{o^T_i})=f_{cl}(p^{gt}_i,\hat{p_i})+\underbrace{\hat{o^T_i}\cdot\lambda_D\cdot{f_{cl}(p^T_i,\hat{p_i})}}_{\text{objectness scaled distillation}}$$
 
+$$f^{Comb}_{bb}(b^{gt}_i,\hat{b_i},b^T_i,\hat{o^T_i})=f_{bb}(b^{gt}_i,\hat{b_i})+\underbrace{\hat{o^T_i}\cdot\lambda_D\cdot{f_{bb}(b^T_i,\hat{b_i})}}_{\text{objectness scaled distillation}}$$
+
+基于缩放动作的objectnes作为单阶段检测器蒸馏的过滤器，它将给背景较多的cell非常低的权重。看起来更像目标的前景区域会在教师网络中具有非常高的目标置信度，所定义的蒸馏损失利用了这些区域的教师知识。值得注意的是，损失函数保留了相同的部分，但是对于蒸馏，本文仅仅增加了教师的输出而不是使用ground truth。
+
+### 3.2 Feature Map-NMS
+原始的Yolo中有许多cells和anchorboxes都是预测的同一个物体，因此，NMS对于目标检测架构来说是非常必要的后处理手段。但是，NMS被用在端到端的网络结构外面，高度重叠的预测是在最后一层卷积层上表示的。当这些预测从教师网络传到学生网络时会导致冗余信息。因此，我们观察到上面所描述的蒸馏损失会导致性能损失，因为教师网络对于高度重叠的检测会停止传送信息。和高度重叠的检测相对应的特征图不会对相同的目标类别和维度传递大的梯度，从而导致网络过拟合。
+
+为了克服重叠检测的问题，本文提出Feature Map-NMS。背后的思想是如果$K\times{K}$个ceils附近的多个candidates对应着相同的类别，那么它们可能在图片中对应相同的目标。因此，我们仅仅选择其中最大置信度的那个candidate。实践中，我们在最后一个特征图上检测类别置信度的激活情况，将对应相同类别的激活设为零。教师网络使用soft labels作为检测结果。教师网络的最后一层在围绕狗的区域内预测出一组boundingboxes。为了抑制重叠检测，我们挑选最高目标置信度的检测结果。重叠的candidates中最强的candidate被传递到学生网络。在本文的实验中使用的cell领域是3×3
+
+## 4. 数据的有效性
+这一节描述我们应该怎么使用更多的训练数据来提升性能。
++ 标注数据：增加更多的标注数据是最直接的方法。
++ 未标注数据：本文将未标注数据和蒸馏损失结合在一起。主要想法是在可用的时候使用soft labels和groundtruth label。当ground truth不可得时仅仅使用教师网络的soft labels。实践中，当ground truth不存在时，我们只传播损失的教师部分，否则就传播2-4描述的损失组合。因为目标函数无缝整合了soft-label和ground truth，这使得我们可以用标注数据和未标注数据一起训练网络。
