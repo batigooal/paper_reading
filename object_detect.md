@@ -1,4 +1,10 @@
 # Object detection at 200 Frames Per Second
+这是一篇实战trick很强的论文，从三个方面进行了检测模型优化工作，包括：
+1. 网络结构
+学生框架是在Tiny-Yolo上做的改进，
+2. 知识蒸馏
+3. 数据训练
+
 ## 摘要
 针对网络结构、loss函数和训练数据三个方面对目标检测框架进行了改进。网络结构方面开发了一个轻量级的且满足性能的紧凑架构；损失函数方面使用了**蒸馏损失函数**，提出了各种创新方案来促使蒸馏单阶段检测流程更加有效，称为objectness scaled distillation loss, feature map non-maximal suppression以及一个用于检测的统一distillation loss function；最后，文章探索了利用未标记数据来改进性能的方法，使用教师网络的soft labels让未标注数据训练我们的网络。
 性能上参数量只有VGG的十分之一，速度可以超过200FPS，在Pascal数据集上可以得到检测正确率的14mAP的提升
